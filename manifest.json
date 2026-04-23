@@ -1,10 +1,10 @@
 {
-  "name": "Experiment Logger",
-  "short_name": "ExpLogger",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#309394",
+  "name": "MOMENT Lab Timer",
+  "short_name": "MOMENT",
+  "start_url": "index.html",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "orientation": "portrait",
   "icons": [
     {
