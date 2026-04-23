@@ -1,275 +1,175 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Experiment Logger Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MOMENT – Lab Timer</title>
 
 <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
 
 <style>
-body { 
-  font-family: Arial; 
-  padding: 20px; 
-  background: #ffffff;
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:#000;
+  color:#fff;
+  text-align:center;
 }
 
-/* Standard Button */
-button {
-  margin: 5px;
-  padding: 12px;
-  font-size: 14px;
-  border-radius: 8px;
-  border: none;
-  background: #f2f2f2;
-  transition: 0.2s;
+h1{
+  margin-top:10px;
 }
 
-/* ===== Exklusive Blöcke (Türkis - Logo Hauptfarbe) ===== */
-button.active-exclusive { 
-  background: #309394; 
-  color: white; 
+button{
+  width:90%;
+  padding:14px;
+  margin:6px 0;
+  font-size:18px;
+  border:none;
+  border-radius:10px;
+  background:#222;
+  color:#fff;
 }
 
-/* ===== Parallele Kanäle (Korall - Logo Akzentfarbe) ===== */
-button.active-parallel { 
-  background: #EB897A; 
-  color: white; 
+button:active{
+  background:#444;
 }
 
-/* ===== START (dunkleres Türkis) ===== */
-button.active-experiment { 
-  background: #267879; 
-  color: white; 
+.activeSaliva{
+  background:#0055aa !important;
 }
 
-/* ===== ENDE (dunkleres Korall) ===== */
-button.stop-active { 
-  background: #D96E5E; 
-  color: white; 
+#timer{
+  font-size:22px;
+  margin:15px 0;
 }
 
-/* Hover Effekt */
-button:hover {
-  opacity: 0.85;
-  cursor: pointer;
+#salivaTimer{
+  font-size:20px;
+  margin-bottom:10px;
 }
 
-#timer {
-  font-size: 26px;
-  margin: 15px 0;
-  font-weight: bold;
-  color: #309394;
+.section{
+  margin-top:20px;
+}
+
+.hidden{
+  display:none;
 }
 </style>
-
 </head>
+
 <body>
 
-<h2 style="color:#309394;">Experiment Logger Pro</h2>
+<h1>MOMENT</h1>
 
-<label>ID:</label>
-<input type="text" id="participantID">
+<div id="startScreen">
+  <p>⚠️ Bitte Flugmodus aktivieren</p>
+  <button onclick="startExperiment()">Testung starten</button>
+</div>
 
-<button id="startBtn" onclick="startExperiment()">START</button>
-<button id="endBtn" onclick="endExperiment()">ENDE</button>
-<button onclick="undoLast()">UNDO</button>
+<div id="mainScreen" class="hidden">
 
-<div id="timer">00:00:00.000</div>
+  <div id="timer">00:00</div>
 
-<h3 style="color:#309394;">Exklusive Blöcke</h3>
-<div id="exclusiveButtons"></div>
+  <div class="section">
+    <h2>Exklusive Blöcke</h2>
+    <div id="salivaTimer">Speichel-Timer: 00:00</div>
 
-<h3 style="color:#EB897A;">Parallele Kanäle</h3>
-<button id="EKG-Mutter" onclick="toggleParallel('EKG-Mutter', this)">EKG-Mutter</button>
-<button id="EKG-Kind" onclick="toggleParallel('EKG-Kind', this)">EKG-Kind</button>
+    <button onclick="exclusiveEvent('T0 – Speichel', true, this)">T0 – Speichel</button>
+    <button onclick="exclusiveEvent('T2 – Speichel', true, this)">T2 – Speichel</button>
+    <button onclick="exclusiveEvent('T3 – Speichel', true, this)">T3 – Speichel</button>
+    <button onclick="exclusiveEvent('T4 – Speichel', true, this)">T4 – Speichel</button>
+  </div>
+
+</div>
 
 <script>
-// ===== Variablen =====
-let experimentStart = null;
-let experimentEnd = null;
-let activeExclusive = null;
-let exclusiveStart = null;
-let parallelChannels = {};
-let eventLog = [];
+let experimentStart;
+let salivaStart = null;
+let salivaAlertTriggered = false;
+let wakeLock = null;
+let experimentEnd = false;
 
-const exclusiveCategories = [
-  "Speichel + Fragebogen T0",
-  "Freiesspiel + Video",
-  "Fragebogen T1",
-  "Computeraufgabe",
-  "Speichel + Fragebogen T2",
-  "Speichel + Fragebogen T3",
-  "Speichel + Fragebogen T4",
-  "Speichel + Fragebogen T5"
-];
+const SALIVA_INTERVAL = 20 * 60 * 1000;
 
-// ===== TIMER =====
-setInterval(() => {
-  if (experimentStart && !experimentEnd) {
-    let diff = Date.now() - experimentStart;
-    document.getElementById("timer").innerText = formatTime(diff);
+function format(ms){
+  let sec = Math.floor(ms/1000);
+  let min = Math.floor(sec/60);
+  sec = sec % 60;
+  return String(min).padStart(2,'0') + ":" + String(sec).padStart(2,'0');
+}
+
+function formatShort(ms){
+  let sec = Math.floor(ms/1000);
+  let min = Math.floor(sec/60);
+  sec = sec % 60;
+  return String(min).padStart(2,'0') + ":" + String(sec).padStart(2,'0');
+}
+
+async function requestWakeLock(){
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+  }catch(err){
+    console.log("Wake Lock nicht verfügbar");
   }
-}, 10);
-
-function formatTime(ms) {
-  let h = Math.floor(ms / 3600000);
-  let m = Math.floor((ms % 3600000) / 60000);
-  let s = Math.floor((ms % 60000) / 1000);
-  let milli = ms % 1000;
-  return `${pad(h)}:${pad(m)}:${pad(s)}.${milli.toString().padStart(3,'0')}`;
 }
 
-function pad(n){ return n.toString().padStart(2,'0'); }
-
-function todayString() {
-  return new Date().toLocaleDateString('de-DE');
-}
-
-// ===== START =====
-function startExperiment() {
-  let id = document.getElementById("participantID").value.trim();
-  if (!id) { alert("Bitte ID eingeben"); return; }
-  if (experimentStart) return;
+function startExperiment(){
+  document.documentElement.requestFullscreen().catch(()=>{});
+  requestWakeLock();
 
   experimentStart = Date.now();
-  document.getElementById("startBtn").classList.add("active-experiment");
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("mainScreen").classList.remove("hidden");
 }
 
-// ===== ENDE =====
-function endExperiment() {
-  if (!experimentStart || experimentEnd) return;
+function exclusiveEvent(label, isSaliva, btn){
 
-  if (activeExclusive) stopExclusive();
-  for (let key in parallelChannels) {
-    if (parallelChannels[key]) stopParallel(key);
+  if(isSaliva){
+    salivaStart = Date.now();
+    salivaAlertTriggered = false;
+
+    document.querySelectorAll(".activeSaliva")
+      .forEach(b=>b.classList.remove("activeSaliva"));
+
+    btn.classList.add("activeSaliva");
+  }
+}
+
+function triggerSalivaAlert(){
+  if(navigator.vibrate){
+    navigator.vibrate([500,200,500]);
+  }
+  alert("20 Minuten erreicht – nächste Speichelprobe!");
+}
+
+setInterval(()=>{
+
+  if(experimentStart && !experimentEnd){
+    let diff = Date.now() - experimentStart;
+    document.getElementById("timer").innerText = format(diff);
   }
 
-  experimentEnd = Date.now();
+  if (salivaStart && !experimentEnd) {
+    let diff = Date.now() - salivaStart;
+    document.getElementById("salivaTimer").innerText =
+      "Speichel-Timer: " + formatShort(diff);
 
-  eventLog.push({
-    ID: document.getElementById("participantID").value,
-    Typ: "Experiment",
-    Kategorie: "Gesamtexperiment",
-    Start: new Date(experimentStart).toLocaleTimeString('de-DE'),
-    Ende: new Date(experimentEnd).toLocaleTimeString('de-DE'),
-    Dauer: formatTime(experimentEnd - experimentStart),
-    Datum: todayString()
-  });
-
-  document.getElementById("endBtn").classList.add("stop-active");
-
-  exportCSV();
-}
-
-// ===== EXKLUSIV =====
-function createExclusiveButtons() {
-  let container = document.getElementById("exclusiveButtons");
-  exclusiveCategories.forEach(cat => {
-    let btn = document.createElement("button");
-    btn.innerText = cat;
-    btn.onclick = () => toggleExclusive(cat, btn);
-    container.appendChild(btn);
-  });
-}
-
-function toggleExclusive(cat, btn) {
-  if (!experimentStart) { alert("Erst START drücken"); return; }
-
-  if (activeExclusive === cat) {
-    stopExclusive();
-    return;
-  }
-
-  if (activeExclusive) stopExclusive();
-
-  activeExclusive = cat;
-  exclusiveStart = Date.now();
-
-  document.querySelectorAll("#exclusiveButtons button")
-    .forEach(b => b.classList.remove("active-exclusive"));
-
-  btn.classList.add("active-exclusive");
-}
-
-function stopExclusive() {
-  let now = Date.now();
-
-  eventLog.push({
-    ID: document.getElementById("participantID").value,
-    Typ: "Block",
-    Kategorie: activeExclusive,
-    Start: new Date(exclusiveStart).toLocaleTimeString('de-DE'),
-    Ende: new Date(now).toLocaleTimeString('de-DE'),
-    Dauer: formatTime(now - exclusiveStart),
-    Datum: todayString()
-  });
-
-  activeExclusive = null;
-  exclusiveStart = null;
-
-  document.querySelectorAll("#exclusiveButtons button")
-    .forEach(b => b.classList.remove("active-exclusive"));
-}
-
-// ===== PARALLEL =====
-function toggleParallel(cat, btn) {
-  if (!experimentStart) { alert("Erst START drücken"); return; }
-
-  if (parallelChannels[cat]) {
-    stopParallel(cat);
-    btn.classList.remove("active-parallel");
+    if (diff >= SALIVA_INTERVAL && !salivaAlertTriggered) {
+      salivaAlertTriggered = true;
+      triggerSalivaAlert();
+    }
   } else {
-    parallelChannels[cat] = Date.now();
-    btn.classList.add("active-parallel");
+    document.getElementById("salivaTimer").innerText =
+      "Speichel-Timer: 00:00";
   }
-}
 
-function stopParallel(cat) {
-  let now = Date.now();
+},1000);
 
-  eventLog.push({
-    ID: document.getElementById("participantID").value,
-    Typ: "Parallel",
-    Kategorie: cat,
-    Start: new Date(parallelChannels[cat]).toLocaleTimeString('de-DE'),
-    Ende: new Date(now).toLocaleTimeString('de-DE'),
-    Dauer: formatTime(now - parallelChannels[cat]),
-    Datum: todayString()
-  });
-
-  parallelChannels[cat] = null;
-}
-
-// ===== UNDO =====
-function undoLast() {
-  if (eventLog.length === 0) return;
-  eventLog.pop();
-  alert("Letzter Eintrag entfernt.");
-}
-
-// ===== CSV =====
-function exportCSV() {
-  let id = document.getElementById("participantID").value;
-  let today = todayString().replace(/\./g,"-");
-
-  let csv = "ID,Typ,Kategorie,Start,Ende,Dauer,Datum\n";
-  eventLog.forEach(r=>{
-    csv += `${r.ID},${r.Typ},${r.Kategorie},${r.Start},${r.Ende},${r.Dauer},${r.Datum}\n`;
-  });
-
-  let blob = new Blob([csv], {type:'text/csv'});
-  let a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = id + "_" + today + ".csv";
-  a.click();
-}
-
-createExclusiveButtons();
-
-// ===== SERVICE WORKER =====
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./service-worker.js')
-    .then(() => console.log("Service Worker registriert"));
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js');
 }
 </script>
 
