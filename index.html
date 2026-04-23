@@ -1,155 +1,119 @@
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MOMENT – Lab Timer</title>
-
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#000000">
+<title>MOMENT Logger</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial, sans-serif;
-  background:#000;
-  color:#fff;
-  text-align:center;
+body {
+  font-family: Arial;
+  padding: 20px;
+  background: #ffffff;
 }
 
-h1{
-  margin-top:10px;
+h2 { color: #309394; }
+
+input {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  margin-bottom: 15px;
 }
 
-button{
-  width:90%;
-  padding:14px;
-  margin:6px 0;
-  font-size:18px;
-  border:none;
-  border-radius:10px;
-  background:#222;
-  color:#fff;
+button {
+  width: 100%;
+  padding: 20px;
+  font-size: 18px;
+  margin: 10px 0;
+  border-radius: 12px;
+  border: none;
+  background: #f2f2f2;
 }
 
-button:active{
-  background:#444;
+button:active { transform: scale(0.98); }
+
+.start-active { background:#267879; color:white; }
+.stop-active { background:#D96E5E; color:white; }
+.parallel-active { background:#EB897A; color:white; }
+.exclusive-active { background:#309394; color:white; }
+
+.timer-main {
+  font-size: 28px;
+  font-weight: bold;
+  color: #309394;
+  margin: 15px 0;
 }
 
-.activeSaliva{
-  background:#0055aa !important;
+.timer-saliva {
+  font-size: 22px;
+  font-weight: bold;
+  color: #D96E5E;
+  margin: 10px 0 20px 0;
 }
 
-#timer{
-  font-size:22px;
-  margin:15px 0;
-}
-
-#salivaTimer{
-  font-size:20px;
-  margin-bottom:10px;
-}
-
-.section{
-  margin-top:20px;
-}
-
-.hidden{
-  display:none;
+.section {
+  margin-top: 30px;
+  padding-top: 15px;
+  border-top: 2px solid #eee;
 }
 </style>
 </head>
 
 <body>
 
-<h1>MOMENT</h1>
+<h2>MOMENT Logger</h2>
 
-<div id="startScreen">
-  <p>⚠️ Bitte Flugmodus aktivieren</p>
-  <button onclick="startExperiment()">Testung starten</button>
+<label>ID:</label>
+<input type="text" id="participantID">
+
+<button id="startBtn" onclick="startExperiment()">Start Testung</button>
+<button id="endBtn" onclick="endExperiment()">Ende Testung</button>
+
+<div class="timer-main" id="mainTimer">00:00:00.000</div>
+
+<!-- PARALLEL -->
+<div class="section">
+<h3 style="color:#EB897A;">Parallele Kanäle</h3>
+<button onclick="toggleParallel('EKG Mama', this)">Start EKG Mama</button>
+<button onclick="toggleParallel('EKG Kind', this)">Start EKG Kind</button>
 </div>
 
-<div id="mainScreen" class="hidden">
+<!-- EXKLUSIV -->
+<div class="section exclusive-group">
+<h3 style="color:#309394;">Exklusive Blöcke</h3>
 
-  <div id="timer">00:00</div>
+<div class="timer-saliva" id="salivaTimer">
+Speichel-Timer: 00:00
+</div>
 
-  <div class="section">
-    <h2>Exklusive Blöcke</h2>
-    <div id="salivaTimer">Speichel-Timer: 00:00</div>
-
-    <button onclick="exclusiveEvent('T0 – Speichel', true, this)">T0 – Speichel</button>
-    <button onclick="exclusiveEvent('T2 – Speichel', true, this)">T2 – Speichel</button>
-    <button onclick="exclusiveEvent('T3 – Speichel', true, this)">T3 – Speichel</button>
-    <button onclick="exclusiveEvent('T4 – Speichel', true, this)">T4 – Speichel</button>
-  </div>
-
+<button onclick="exclusiveEvent('Speichelprobe T0', true, this)">Speichelprobe T0</button>
+<button onclick="exclusiveEvent('Start Spiel', false, this)">Start Spiel</button>
+<button onclick="exclusiveEvent('Ende Spiel', false, this)">Ende Spiel</button>
+<button onclick="exclusiveEvent('Start Stressor', false, this)">Start Stressor</button>
+<button onclick="exclusiveEvent('Ende Stressor', false, this)">Ende Stressor</button>
+<button onclick="exclusiveEvent('Speichelprobe T2', true, this)">Speichelprobe T2</button>
+<button onclick="exclusiveEvent('Speichelprobe T3', true, this)">Speichelprobe T3</button>
+<button onclick="exclusiveEvent('Speichelprobe T4', true, this)">Speichelprobe T4</button>
+<button onclick="exclusiveEvent('Speichelprobe T5', true, this)">Speichelprobe T5</button>
 </div>
 
 <script>
-let experimentStart;
+let experimentStart = null;
+let experimentEnd = null;
 let salivaStart = null;
 let salivaAlertTriggered = false;
 let wakeLock = null;
-let experimentEnd = false;
-
+let eventLog = [];
+let parallelChannels = {};
 const SALIVA_INTERVAL = 20 * 60 * 1000;
 
-function format(ms){
-  let sec = Math.floor(ms/1000);
-  let min = Math.floor(sec/60);
-  sec = sec % 60;
-  return String(min).padStart(2,'0') + ":" + String(sec).padStart(2,'0');
-}
+/* ================= TIMER ================= */
 
-function formatShort(ms){
-  let sec = Math.floor(ms/1000);
-  let min = Math.floor(sec/60);
-  sec = sec % 60;
-  return String(min).padStart(2,'0') + ":" + String(sec).padStart(2,'0');
-}
+setInterval(() => {
 
-async function requestWakeLock(){
-  try{
-    wakeLock = await navigator.wakeLock.request('screen');
-  }catch(err){
-    console.log("Wake Lock nicht verfügbar");
-  }
-}
-
-function startExperiment(){
-  document.documentElement.requestFullscreen().catch(()=>{});
-  requestWakeLock();
-
-  experimentStart = Date.now();
-  document.getElementById("startScreen").classList.add("hidden");
-  document.getElementById("mainScreen").classList.remove("hidden");
-}
-
-function exclusiveEvent(label, isSaliva, btn){
-
-  if(isSaliva){
-    salivaStart = Date.now();
-    salivaAlertTriggered = false;
-
-    document.querySelectorAll(".activeSaliva")
-      .forEach(b=>b.classList.remove("activeSaliva"));
-
-    btn.classList.add("activeSaliva");
-  }
-}
-
-function triggerSalivaAlert(){
-  if(navigator.vibrate){
-    navigator.vibrate([500,200,500]);
-  }
-  alert("20 Minuten erreicht – nächste Speichelprobe!");
-}
-
-setInterval(()=>{
-
-  if(experimentStart && !experimentEnd){
-    let diff = Date.now() - experimentStart;
-    document.getElementById("timer").innerText = format(diff);
+  if (experimentStart && !experimentEnd) {
+    document.getElementById("mainTimer").innerText =
+      formatTime(Date.now() - experimentStart);
   }
 
   if (salivaStart && !experimentEnd) {
@@ -166,10 +130,171 @@ setInterval(()=>{
       "Speichel-Timer: 00:00";
   }
 
-},1000);
+}, 100);
 
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js');
+/* ================= HELPERS ================= */
+
+function formatTime(ms){
+  let h=Math.floor(ms/3600000);
+  let m=Math.floor((ms%3600000)/60000);
+  let s=Math.floor((ms%60000)/1000);
+  let milli=ms%1000;
+  return `${pad(h)}:${pad(m)}:${pad(s)}.${milli.toString().padStart(3,'0')}`;
+}
+
+function formatShort(ms){
+  let m=Math.floor(ms/60000);
+  let s=Math.floor((ms%60000)/1000);
+  return `${pad(m)}:${pad(s)}`;
+}
+
+function pad(n){ return n.toString().padStart(2,'0'); }
+
+function todayString(){
+  return new Date().toLocaleDateString('de-DE');
+}
+
+function getID(){
+  return document.getElementById("participantID").value.trim();
+}
+
+/* ================= START ================= */
+
+async function startExperiment(){
+
+  let id=getID();
+  if(!id){ alert("Bitte ID eingeben"); return; }
+  if(experimentStart) return;
+
+  alert("Bitte jetzt Flugmodus aktivieren.");
+
+  experimentStart=Date.now();
+  salivaAlertTriggered=false;
+
+  document.getElementById("startBtn").classList.add("start-active");
+
+  if(document.documentElement.requestFullscreen){
+    try{ await document.documentElement.requestFullscreen(); }catch(e){}
+  }
+
+  if('wakeLock' in navigator){
+    try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+
+  eventLog.push({
+    ID:id,
+    Kategorie:"Start Testung",
+    Zeit:new Date().toLocaleTimeString('de-DE'),
+    Datum:todayString()
+  });
+}
+
+/* ================= ENDE ================= */
+
+function endExperiment(){
+  if(!experimentStart || experimentEnd) return;
+
+  experimentEnd=Date.now();
+  document.getElementById("endBtn").classList.add("stop-active");
+
+  eventLog.push({
+    ID:getID(),
+    Kategorie:"Ende Testung",
+    Zeit:new Date().toLocaleTimeString('de-DE'),
+    Datum:todayString()
+  });
+
+  exportCSV();
+}
+
+/* ================= EXKLUSIV ================= */
+
+function exclusiveEvent(name,isSaliva=false,btn){
+
+  if(!experimentStart){ alert("Erst Start drücken"); return; }
+
+  document.querySelectorAll(".exclusive-group button")
+    .forEach(b=>b.classList.remove("exclusive-active"));
+
+  btn.classList.add("exclusive-active");
+
+  eventLog.push({
+    ID:getID(),
+    Kategorie:name,
+    Zeit:new Date().toLocaleTimeString('de-DE'),
+    Datum:todayString()
+  });
+
+  if(isSaliva){
+    salivaStart=Date.now();
+    salivaAlertTriggered=false;
+  }
+}
+
+/* ================= PARALLEL ================= */
+
+function toggleParallel(name,btn){
+
+  if(!experimentStart){ alert("Erst Start drücken"); return; }
+
+  if(parallelChannels[name]){
+    eventLog.push({
+      ID:getID(),
+      Kategorie:name+" STOP",
+      Zeit:new Date().toLocaleTimeString('de-DE'),
+      Datum:todayString()
+    });
+    parallelChannels[name]=false;
+    btn.classList.remove("parallel-active");
+  }else{
+    eventLog.push({
+      ID:getID(),
+      Kategorie:name+" START",
+      Zeit:new Date().toLocaleTimeString('de-DE'),
+      Datum:todayString()
+    });
+    parallelChannels[name]=true;
+    btn.classList.add("parallel-active");
+  }
+}
+
+/* ================= ALERT ================= */
+
+function triggerSalivaAlert(){
+
+  if(navigator.vibrate){
+    navigator.vibrate([300,200,300,200,500]);
+  }
+
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    osc.frequency.setValueAtTime(880,ctx.currentTime);
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime+0.5);
+  }catch(e){}
+
+  alert("20 Minuten erreicht – Speichelprobe fällig!");
+}
+
+/* ================= CSV ================= */
+
+function exportCSV(){
+
+  let id=getID();
+  let today=todayString().replace(/\./g,"-");
+
+  let csv="ID,Kategorie,Zeit,Datum\n";
+  eventLog.forEach(r=>{
+    csv+=`${r.ID},${r.Kategorie},${r.Zeit},${r.Datum}\n`;
+  });
+
+  let blob=new Blob([csv],{type:'text/csv'});
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=id+"_"+today+".csv";
+  a.click();
 }
 </script>
 
